@@ -25,7 +25,7 @@ jobs:
             --parameters commands='[
               "cd /home/ec2-user || exit",
               "rm -rf springboot-app || true",
-              "git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git springboot-app",
+              "git clone https://github.com/pundlamahesh/Java-springboot-project.git",
               "cd springboot-app",
               "docker stop springboot-container || true",
               "docker rm springboot-container || true",
