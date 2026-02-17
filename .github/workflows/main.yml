@@ -1,109 +1,34 @@
-name: Full CI/CD Pipeline
+name: Build and Deploy on EC2
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
 
 jobs:
-  build-deploy:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout SCM
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      # 2️⃣ Setup Java 17
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          java-version: '17'
-          distribution: 'temurin'
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      # # 3️⃣ Clean & Package + SonarQube Scan
-      # - name: Sonar Scan
-      #   env:
-      #     SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      #   run: |
-      #     mvn clean verify sonar:sonar \
-      #       -DskipTests \
-      #       -Dsonar.projectKey=myproject \
-      #       -Dsonar.host.url=${{ secrets.SONAR_URL }} \
-      #       -Dsonar.login=${{ secrets.SONAR_TOKEN }}
-
-
-      # 4️⃣ Quality Gate Check
-      # - name: Quality Gate
-      #   uses: sonarsource/sonarqube-quality-gate-action@v1
-      #   timeout-minutes: 5
-      #   with:
-      #     scanMetadataReportFile: target/site/sonar/report-task.txt
-
-      # 5️⃣ Build final JAR
-      - name: Build JAR
-        run: mvn clean package -DskipTests=true
-        working-directory: backend
-      - name: Remove old JAR
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_KEY }}
-          script: |
-            sudo rm -f /home/ec2-user/app/backend/target/datastore-0.0.7.jar
-            sudo chown -R ec2-user:ec2-user /home/ec2-user/app
-
-      # 6️⃣ Copy JAR to EC2
-      - name: Upload JAR to EC2
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_KEY }}
-          source: "backend/target/datastore-0.0.7.jar"
-          target: "/home/ec2-user/app/"
-          overwrite: true
-
-      # 7️⃣ Stop Old Application
-      - name: Stop Old Application
-        uses: appleboy/ssh-action@v1.1.0
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: root
-          key: ${{ secrets.EC2_KEY }}
-          script_stop: false
-          script: |
-            PID=$(pgrep -f datastore-0.0.7.jar || true)
-            if [ -n "$PID" ]; then
-                echo "Stopping existing application with PID: $PID"
-               ### sudo kill -9 $PID || true
-            else
-                echo "No existing application running"
-            fi
-
-
-      # 8️⃣ Run New Application
-      - name: Run Application on EC2
-        uses: appleboy/ssh-action@v1.1.0
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_KEY }}
-          script: |
-            sudo mkdir -p /var/log/app
-            sudo chown ec2-user:ec2-user /var/log/app
-            sudo chmod 777 /var/log/app
-
-            cd /home/ec2-user/app/target
-
-            nohup env \
-            MYSQL_HOST=database-1.cstu40q04izz.us-east-1.rds.amazonaws.com \
-            MYSQL_PORT=3306 \
-            MYSQL_USERNAME=admin \
-            MYSQL_PASSWORD=Cloud123 \
-            LOG_FILE_PATH=/var/log/app/datastore.log \
-            java -jar datastore-0.0.7.jar \
-            --server.port=8084 \
-            > /var/log/app/nohup.out 2>&1 &
-
-            echo "🚀 New Application Started"
+      - name: Deploy using SSM
+        run: |
+          aws ssm send-command \
+            --document-name "AWS-RunShellScript" \
+            --targets "Key=instanceids,Values=${{ secrets.EC2_INSTANCE_ID }}" \
+            --parameters commands='[
+              "cd /home/ec2-user || exit",
+              "rm -rf springboot-app || true",
+              "git clone https://github.com/YOUR_USERNAME/YOUR_REPO.git springboot-app",
+              "cd springboot-app",
+              "docker stop springboot-container || true",
+              "docker rm springboot-container || true",
+              "docker build -t springboot-app .",
+              "docker run -d -p 8080:8080 --name springboot-container springboot-app"
+            ]'
