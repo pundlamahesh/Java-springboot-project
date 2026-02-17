@@ -1,4 +1,4 @@
-name: Build and Deploy on EC2
+name: Build Backend & Frontend on EC2
 
 on:
   push:
@@ -24,11 +24,23 @@ jobs:
             --targets "Key=instanceids,Values=${{ secrets.EC2_INSTANCE_ID }}" \
             --parameters commands='[
               "cd /home/ec2-user || exit",
-              "rm -rf springboot-app || true",
-              "git clone https://github.com/pundlamahesh/Java-springboot-project.git",
-              "cd springboot-app",
-              "docker stop springboot-container || true",
-              "docker rm springboot-container || true",
-              "docker build -t springboot-app .",
-              "docker run -d -p 8080:8080 --name springboot-container springboot-app"
+              "rm -rf myapp || true",
+              "git clone https://github.com/pundlamahesh/Java-springboot-project.git myapp",
+              "cd myapp",
+              
+              "docker stop backend || true",
+              "docker rm backend || true",
+              "docker stop frontend || true",
+              "docker rm frontend || true",
+
+              "cd backend",
+              "docker build -t backend .",
+              "cd ..",
+
+              "cd frontend",
+              "docker build -t frontend .",
+              "cd ..",
+
+              "docker run -dt -p 8084:8084 --name backend backend",
+              "docker run -dt -p 8501:8501 --name frontend frontend"
             ]'
